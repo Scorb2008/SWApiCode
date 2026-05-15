@@ -4,6 +4,7 @@ from typing import Sequence
 
 from sqlalchemy import select, update, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.db.models import Account, PendingPayment, PromoCode, Purchase, User
 
@@ -242,6 +243,7 @@ async def get_purchases_by_user(
 ) -> Sequence[Purchase]:
     result = await session.execute(
         select(Purchase)
+        .options(selectinload(Purchase.account))
         .where(Purchase.user_id == user_id)
         .order_by(Purchase.created_at.desc())
     )
