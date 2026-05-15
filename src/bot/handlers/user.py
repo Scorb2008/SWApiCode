@@ -148,7 +148,8 @@ async def size_chosen(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         f"💎 <b>Тариф: {size}</b>\n"
         f"💰 Цена за шт.: <b>{price:.2f} ₽</b>\n"
-        f"📦 Доступно: <b>{size_info[1]} шт.</b>\n\n"
+        f"📦 Доступно: <b>{size_info[1]} шт.</b>\n"
+        f"🎁 <b>+5 МЛН Токенов при покупке!</b>\n\n"
         "Введите количество:",
         reply_markup=cancel_kb,
     )
