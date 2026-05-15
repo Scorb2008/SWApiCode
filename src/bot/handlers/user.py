@@ -1,7 +1,9 @@
 from decimal import Decimal
+import html
 
 from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.bot.keyboards.inline import (
     cancel_kb,
@@ -83,7 +85,7 @@ async def show_purchase_history(callback: types.CallbackQuery):
 
     lines = []
     for p in purchases[:15]:
-        acc_login = p.account.login if p.account else "—"
+        acc_login = html.escape(p.account.login) if p.account else "—"
         lines.append(
             f"🕐 {p.created_at.strftime('%d.%m.%Y %H:%M')}\n"
             f"💵 Сумма: {p.amount:.2f} ₽\n"
@@ -245,7 +247,7 @@ async def pay_with_balance(callback: types.CallbackQuery, state: FSMContext):
             return
 
     creds = "\n\n".join(
-        f"🔑 <code>{a.login}</code>\n🔐 <code>{a.password}</code>" for a in accounts
+        f"🔑 <code>{html.escape(a.login)}</code>\n🔐 <code>{html.escape(a.password)}</code>" for a in accounts
     )
     await state.clear()
     await callback.message.edit_text(
@@ -286,10 +288,12 @@ async def pay_with_yookassa(callback: types.CallbackQuery, state: FSMContext):
 
     await state.update_data(payment_id=payment_id, pending_total=str(total))
     await callback.message.edit_text(
-        f"💳 <b>Ссылка для оплаты:</b>\n"
-        f"{payment_url}\n\n"
+        "💳 <b>Ссылка для оплаты:</b>\n\n"
         "После оплаты нажмите /start, чтобы проверить статус.",
-        reply_markup=user_main_kb(),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Оплатить", url=payment_url)],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:main")],
+        ]),
     )
     await callback.answer()
 
@@ -323,9 +327,12 @@ async def top_up_amount(message: types.Message, state: FSMContext):
 
     await state.clear()
     await message.answer(
-        f"💳 <b>Ссылка для оплаты:</b>\n{payment_url}\n\n"
+        "💳 <b>Ссылка для оплаты:</b>\n\n"
         "После оплаты нажмите /start для проверки баланса.",
-        reply_markup=user_main_kb(),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 Оплатить", url=payment_url)],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:main")],
+        ]),
     )
 
 
@@ -352,7 +359,7 @@ async def promo_apply(message: types.Message, state: FSMContext):
                 reply_markup=user_main_kb(),
             )
         elif promo.promo_type == "token":
-            token_text = promo.token_value or str(promo.value)
+            token_text = html.escape(promo.token_value or str(promo.value))
             await use_promo(session, promo)
             await session.commit()
             await message.answer(

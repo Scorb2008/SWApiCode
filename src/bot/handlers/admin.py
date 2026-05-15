@@ -45,6 +45,7 @@ from src.db.repository import (
 )
 from src.services.excel_parser import parse_excel
 from src.services.settings import get_setting, set_setting
+import html
 
 router = Router()
 USERS_PER_PAGE = 8
@@ -421,7 +422,7 @@ async def _show_user_purchases(callback: types.CallbackQuery, target_tg_id: int)
 
     lines = [f"📜 <b>История покупок</b> <code>{target_tg_id}</code>:\n"]
     for p in purchases[:10]:
-        acc_login = p.account.login if p.account else "—"
+        acc_login = html.escape(p.account.login) if p.account else "—"
         lines.append(
             f"🕐 {p.created_at.strftime('%d.%m.%Y %H:%M')}\n"
             f"💵 {p.amount:.2f} ₽ | 🔑 <code>{acc_login}</code>\n"
