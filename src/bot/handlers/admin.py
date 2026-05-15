@@ -55,6 +55,8 @@ import html
 
 router = Router()
 
+USERS_PER_PAGE = 10
+PROMOS_PER_PAGE = 10
 
 async def _safe_edit(callback: types.CallbackQuery, **kwargs):
     try:
