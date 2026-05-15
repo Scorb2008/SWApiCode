@@ -54,8 +54,13 @@ from src.services.yookassa import check_yookassa_connection
 import html
 
 router = Router()
-USERS_PER_PAGE = 8
-PROMOS_PER_PAGE = 6
+
+
+async def _safe_edit(callback: types.CallbackQuery, **kwargs):
+    try:
+        await callback.message.edit_text(**kwargs)
+    except Exception:
+        await callback.message.answer(**kwargs)
 
 
 def _is_admin(user_id: int) -> bool:
@@ -74,7 +79,7 @@ async def _notify_admins(text: str):
 async def handle_clear_accounts(callback: types.CallbackQuery):
     async with async_session() as session:
         deleted = await clear_all_accounts(session)
-    await callback.message.edit_text(
+    await _safe_edit(callback, text=
         f"✅ <b>База данных очищена!</b>\nУдалено аккаунтов: <b>{deleted}</b>",
         reply_markup=admin_panel_kb(),
     )
@@ -92,7 +97,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
     cmd = action[1] if len(action) > 1 else ""
 
     if cmd == "panel":
-        await callback.message.edit_text(
+        await callback.message.answer(
             "⚙️ <b>Админ панель</b>",
             reply_markup=admin_panel_kb(),
         )
@@ -105,7 +110,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
 
     elif cmd == "upload":
         await state.set_state(AdminStates.waiting_for_excel)
-        await callback.message.edit_text(
+        await callback.message.answer(
             "📥 <b>Загрузка Excel</b>\n\nПришлите .xlsx файл с аккаунтами.\n"
             "Колонки: A-логин, B-пароль, C-размер, D-цена, E-статус",
             reply_markup=cancel_kb,
@@ -119,28 +124,28 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
             text += f"Текущее фото: <code>{current[:40]}...</code>\n"
         text += "Отправьте новое фото или нажмите ❌ Отмена.\n\n"
         text += "Кнопка «Удалить» — убрать фото."
-        await callback.message.edit_text(
+        await callback.message.answer(
             text,
             reply_markup=_welcome_photo_kb(has_photo=bool(current)),
         )
 
     elif cmd == "delete_welcome_photo":
         set_setting("welcome_photo", "")
-        await callback.message.edit_text(
+        await callback.message.answer(
             "✅ Приветственное фото удалено.",
             reply_markup=admin_panel_kb(),
         )
 
     elif cmd == "broadcast":
         await state.set_state(BroadcastStates.entering_text)
-        await callback.message.edit_text(
+        await callback.message.answer(
             "📢 <b>Рассылка</b>\n\nВведите текст для отправки всем пользователям:",
             reply_markup=cancel_kb,
         )
 
     elif cmd == "search":
         await state.set_state(AdminStates.waiting_for_user_id)
-        await callback.message.edit_text(
+        await callback.message.answer(
             "🔍 <b>Поиск пользователя</b>\n\n"
             "Введите Telegram ID или username (можно с @):",
             reply_markup=cancel_kb,
@@ -148,7 +153,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
 
     elif cmd == "create_promo":
         await state.set_state(AdminStates.creating_promo_type)
-        await callback.message.edit_text(
+        await callback.message.answer(
             "🏷 <b>Создание промокода</b>\n\nВыберите тип:",
             reply_markup=promo_type_kb(),
         )
@@ -176,7 +181,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
     elif cmd == "add_balance" and len(action) > 2:
         await state.update_data(target_tg_id=int(action[2]), balance_mode="add")
         await state.set_state(AdminStates.waiting_for_balance_amount)
-        await callback.message.edit_text(
+        await callback.message.answer(
             "💰 <b>Пополнение баланса</b>\n\nВведите сумму для начисления:",
             reply_markup=cancel_kb,
         )
@@ -184,7 +189,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
     elif cmd == "sub_balance" and len(action) > 2:
         await state.update_data(target_tg_id=int(action[2]), balance_mode="sub")
         await state.set_state(AdminStates.waiting_for_balance_amount)
-        await callback.message.edit_text(
+        await callback.message.answer(
             "💰 <b>Списание баланса</b>\n\nВведите сумму для списания:",
             reply_markup=cancel_kb,
         )
@@ -208,7 +213,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
         size = action[2]
         await state.update_data(editing_size=size)
         await state.set_state(AdminStates.waiting_for_new_price)
-        await callback.message.edit_text(
+        await callback.message.answer(
             f"💰 <b>Изменение цены</b>\n\nТариф: {size}\n\nВведите новую цену (в рублях):",
             reply_markup=cancel_kb,
         )
@@ -219,7 +224,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
 async def _confirm_clear_accounts(callback: types.CallbackQuery):
     async with async_session() as session:
         total = await get_total_accounts_count(session)
-    await callback.message.edit_text(
+    await _safe_edit(callback, text=
         f"⚠️ <b>Очистка базы данных</b>\n\n"
         f"Будут удалены все аккаунты (<b>{total} шт.</b>).\n"
         f"Пользователи, покупки и промокоды останутся.\n\n"
@@ -236,7 +241,7 @@ async def _export_sold_accounts(callback: types.CallbackQuery):
         accounts = await get_sold_accounts_for_export(session)
 
     if not accounts:
-        await callback.message.edit_text(
+        await _safe_edit(callback, text=
             "📭 Нет проданных аккаунтов.",
             reply_markup=admin_panel_kb(),
         )
@@ -263,7 +268,7 @@ async def _export_sold_accounts(callback: types.CallbackQuery):
     finally:
         os.unlink(file_path)
 
-    await callback.message.edit_text("📥 Экспорт готов. Файл отправлен ниже.")
+    await _safe_edit(callback, text="📥 Экспорт готов. Файл отправлен ниже.")
     await callback.answer()
 
 
@@ -272,13 +277,13 @@ async def _show_price_edit(callback: types.CallbackQuery):
         sizes = await get_sizes_list(session)
 
     if not sizes:
-        await callback.message.edit_text(
+        await _safe_edit(callback, text=
             "📭 Нет тарифов для редактирования.",
             reply_markup=admin_panel_kb(),
         )
         return
 
-    await callback.message.edit_text(
+    await _safe_edit(callback, text=
         "💰 <b>Редактирование цен</b>\n\nВыберите тариф:",
         reply_markup=sizes_list_kb(sizes),
     )
@@ -311,7 +316,7 @@ async def handle_new_price(message: types.Message, state: FSMContext):
 
 
 async def _check_yookassa(callback: types.CallbackQuery):
-    await callback.message.edit_text("🔄 Проверка ЮKassa...")
+    await _safe_edit(callback, text="🔄 Проверка ЮKassa...")
     result = await check_yookassa_connection()
 
     shop_id = result.get("shop_id", "—")
@@ -338,7 +343,7 @@ async def _check_yookassa(callback: types.CallbackQuery):
         lines.append("• <code>YOOKASSA_SECRET_KEY</code> в .env")
         lines.append("• Доступ к api.yookassa.ru с сервера")
 
-    await callback.message.edit_text(
+    await _safe_edit(callback, text=
         "\n".join(lines),
         reply_markup=admin_panel_kb(),
     )
@@ -396,7 +401,7 @@ async def broadcast_send(callback: types.CallbackQuery, state: FSMContext):
     text = data.get("broadcast_text", "")
     photo = data.get("broadcast_photo")
 
-    await callback.message.edit_text("📢 Рассылка запущена...")
+    await _safe_edit(callback, text="📢 Рассылка запущена...")
     await callback.answer()
 
     async with async_session() as session:
@@ -416,7 +421,7 @@ async def broadcast_send(callback: types.CallbackQuery, state: FSMContext):
             failed += 1
 
     await state.clear()
-    await callback.message.edit_text(
+    await _safe_edit(callback, text=
         f"✅ <b>Рассылка завершена!</b>\n\n"
         f"📨 Отправлено: {sent}\n"
         f"❌ Ошибок: {failed}",
@@ -457,7 +462,7 @@ async def _show_dashboard(callback: types.CallbackQuery):
         lines.append("\n📊 <b>По размерам:</b>")
         lines.extend(size_lines)
 
-    await callback.message.edit_text("\n".join(lines), reply_markup=admin_panel_kb())
+    await _safe_edit(callback, text="\n".join(lines), reply_markup=admin_panel_kb())
 
 
 async def _show_revenue(callback: types.CallbackQuery):
@@ -483,7 +488,7 @@ async def _show_revenue(callback: types.CallbackQuery):
         f"📊 За 30 дней: <b>{last_30:.2f} ₽</b>",
     ])
 
-    await callback.message.edit_text("\n".join(lines), reply_markup=admin_panel_kb())
+    await _safe_edit(callback, text="\n".join(lines), reply_markup=admin_panel_kb())
 
 
 async def _show_user_card(callback: types.CallbackQuery, target_tg_id: int):
@@ -504,7 +509,7 @@ async def _show_user_card(callback: types.CallbackQuery, target_tg_id: int):
         f"📦 Покупок: {len(purchases)}\n"
         f"⛔ Статус: {'🔴 Забанен' if user.is_banned else '🟢 Активен'}"
     )
-    await callback.message.edit_text(
+    await _safe_edit(callback, text=
         text,
         reply_markup=user_card_kb(target_tg_id, user.is_banned, back_callback="admin:users:0"),
     )
@@ -517,10 +522,10 @@ async def _show_users_page(callback: types.CallbackQuery, page: int):
         users = await get_users_paginated(session, page * USERS_PER_PAGE, USERS_PER_PAGE)
 
     if not users:
-        await callback.message.edit_text("📭 Нет пользователей.", reply_markup=admin_panel_kb())
+        await _safe_edit(callback, text="📭 Нет пользователей.", reply_markup=admin_panel_kb())
         return
 
-    await callback.message.edit_text(
+    await _safe_edit(callback, text=
         f"👥 <b>Пользователи</b> (стр. {page + 1}/{total_pages}) — нажмите на юзера:",
         reply_markup=users_pagination_kb(users, page, total_pages),
     )
@@ -533,13 +538,13 @@ async def _show_promos_page(callback: types.CallbackQuery, page: int):
         promos = await get_promos_paginated(session, page * PROMOS_PER_PAGE, PROMOS_PER_PAGE)
 
     if not promos:
-        await callback.message.edit_text(
+        await _safe_edit(callback, text=
             "📭 Нет промокодов.\n\nСоздайте новый:",
             reply_markup=promo_type_kb(),
         )
         return
 
-    await callback.message.edit_text(
+    await _safe_edit(callback, text=
         f"🏷 <b>Промокоды</b> (стр. {page + 1}/{total_pages}):\n"
         "🟢 активен | 🔴 израсходован\n\nНажмите 🗑 чтобы удалить.",
         reply_markup=promos_pagination_kb(promos, page, total_pages),
@@ -581,7 +586,7 @@ async def _show_user_purchases(callback: types.CallbackQuery, target_tg_id: int)
 
     back = f"admin:user_info:{target_tg_id}"
     if not purchases:
-        await callback.message.edit_text(
+        await _safe_edit(callback, text=
             f"📭 У пользователя <code>{target_tg_id}</code> нет покупок.",
             reply_markup=user_card_kb(target_tg_id, user.is_banned, back_callback=back),
         )
@@ -598,7 +603,7 @@ async def _show_user_purchases(callback: types.CallbackQuery, target_tg_id: int)
     if len(purchases) > 10:
         lines.append(f"... и ещё {len(purchases) - 10}")
 
-    await callback.message.edit_text(
+    await _safe_edit(callback, text=
         "\n".join(lines),
         reply_markup=user_card_kb(target_tg_id, user.is_banned, back_callback=back),
     )
@@ -724,7 +729,7 @@ async def promo_type_chosen(callback: types.CallbackQuery, state: FSMContext):
         "token": "Введите текст токена для выдачи",
     }.get(promo_type, "Введите значение:")
 
-    await callback.message.edit_text(f"🏷 <b>Создание промокода</b>\n\n{hint}:", reply_markup=cancel_kb)
+    await _safe_edit(callback, text=f"🏷 <b>Создание промокода</b>\n\n{hint}:", reply_markup=cancel_kb)
     await callback.answer()
 
 
