@@ -1,0 +1,20 @@
+services:
+  bot:
+    build: .
+    container_name: swapicode-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    command: uv run bot
+
+  api:
+    build: .
+    container_name: swapicode-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    command: uv run api
