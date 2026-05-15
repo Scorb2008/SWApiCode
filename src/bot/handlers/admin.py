@@ -284,7 +284,7 @@ async def _show_price_edit(callback: types.CallbackQuery):
     )
 
 
-@router.message(AdminStates.waiting_for_new_price)
+@router.message(AdminStates.waiting_for_new_price, F.text)
 async def handle_new_price(message: types.Message, state: FSMContext):
     data = await state.get_data()
     size = data.get("editing_size")
@@ -364,7 +364,8 @@ async def handle_welcome_photo(message: types.Message, state: FSMContext):
 
 
 @router.message(AdminStates.waiting_for_welcome_photo)
-async def handle_welcome_photo_invalid(message: types.Message):
+async def handle_welcome_photo_invalid(message: types.Message, state: FSMContext):
+    await state.clear()
     await message.answer("❌ Пожалуйста, отправьте фото.", reply_markup=cancel_kb)
 
 
@@ -606,7 +607,7 @@ async def _show_user_purchases(callback: types.CallbackQuery, target_tg_id: int)
 @router.message(AdminStates.waiting_for_excel, F.content_type == ContentType.DOCUMENT)
 async def handle_excel(message: types.Message, state: FSMContext):
     doc = message.document
-    if not doc.file_name.endswith(".xlsx"):
+    if not doc.file_name or not doc.file_name.endswith(".xlsx"):
         await message.answer("❌ Пожалуйста, отправьте файл в формате .xlsx")
         return
 
@@ -638,7 +639,7 @@ async def _bulk_insert(session, accounts: list[dict]):
     return await bulk_insert_accounts(session, accounts)
 
 
-@router.message(AdminStates.waiting_for_user_id)
+@router.message(AdminStates.waiting_for_user_id, F.text)
 async def search_user_handler(message: types.Message, state: FSMContext):
     query = message.text.strip()
     async with async_session() as session:
@@ -727,7 +728,7 @@ async def promo_type_chosen(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(AdminStates.creating_promo_value)
+@router.message(AdminStates.creating_promo_value, F.text)
 async def promo_value_handler(message: types.Message, state: FSMContext):
     data = await state.get_data()
     promo_type = data.get("promo_type")
@@ -751,7 +752,7 @@ async def promo_value_handler(message: types.Message, state: FSMContext):
     await message.answer("Введите количество использований (по умолчанию 1):", reply_markup=cancel_kb)
 
 
-@router.message(AdminStates.creating_promo_uses)
+@router.message(AdminStates.creating_promo_uses, F.text)
 async def promo_uses_handler(message: types.Message, state: FSMContext):
     data = await state.get_data()
     promo_type = data.get("promo_type")

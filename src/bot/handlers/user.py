@@ -12,6 +12,7 @@ from src.bot.keyboards.inline import (
     size_selection_kb,
     user_main_kb,
 )
+from src.config import settings
 from src.bot.states import BuyStates, PromoStates, TopUpStates
 from src.db.database import async_session
 from src.db.repository import (
@@ -154,7 +155,7 @@ async def size_chosen(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(BuyStates.choosing_quantity)
+@router.message(BuyStates.choosing_quantity, F.text)
 async def quantity_chosen(message: types.Message, state: FSMContext):
     if not message.text.isdigit() or int(message.text) <= 0:
         await message.answer("❌ Введите положительное число.", reply_markup=cancel_kb)
@@ -313,7 +314,7 @@ async def pay_with_yookassa(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(TopUpStates.entering_amount)
+@router.message(TopUpStates.entering_amount, F.text)
 async def top_up_amount(message: types.Message, state: FSMContext):
     try:
         amount = Decimal(message.text)
@@ -356,7 +357,7 @@ async def top_up_amount(message: types.Message, state: FSMContext):
     )
 
 
-@router.message(PromoStates.entering_code)
+@router.message(PromoStates.entering_code, F.text)
 async def promo_apply(message: types.Message, state: FSMContext):
     code = message.text.strip().upper()
     async with async_session() as session:
