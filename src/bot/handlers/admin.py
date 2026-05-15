@@ -17,6 +17,7 @@ from src.bot.keyboards.inline import (
     clear_accounts_confirm_kb,
     promo_type_kb,
     promos_pagination_kb,
+    sizes_list_kb,
     user_card_kb,
     users_pagination_kb,
 )
@@ -36,6 +37,7 @@ from src.db.repository import (
     get_revenue_by_payment_method,
     get_revenue_last_days,
     get_sizes_list,
+    get_sold_accounts_for_export,
     get_total_accounts_count,
     get_total_revenue,
     get_user_by_telegram_id,
@@ -44,9 +46,11 @@ from src.db.repository import (
     search_users,
     set_ban_status,
     update_balance,
+    update_price_by_size,
 )
 from src.services.excel_parser import parse_excel
 from src.services.settings import get_setting, set_setting
+from src.services.yookassa import check_yookassa_connection
 import html
 
 router = Router()
@@ -64,6 +68,17 @@ async def _notify_admins(text: str):
             await bot.send_message(uid, text)
         except Exception:
             pass
+
+
+@router.callback_query(F.data == "admin:clear_accounts:confirm")
+async def handle_clear_accounts(callback: types.CallbackQuery):
+    async with async_session() as session:
+        deleted = await clear_all_accounts(session)
+    await callback.message.edit_text(
+        f"✅ <b>База данных очищена!</b>\nУдалено аккаунтов: <b>{deleted}</b>",
+        reply_markup=admin_panel_kb(),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("admin:"))
@@ -180,6 +195,24 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
     elif cmd == "clear_accounts":
         await _confirm_clear_accounts(callback)
 
+    elif cmd == "check_yookassa":
+        await _check_yookassa(callback)
+
+    elif cmd == "export":
+        await _export_sold_accounts(callback)
+
+    elif cmd == "edit_prices":
+        await _show_price_edit(callback)
+
+    elif cmd.startswith("edit_price:"):
+        size = action[2]
+        await state.update_data(editing_size=size)
+        await state.set_state(AdminStates.waiting_for_new_price)
+        await callback.message.edit_text(
+            f"💰 <b>Изменение цены</b>\n\nТариф: {size}\n\nВведите новую цену (в рублях):",
+            reply_markup=cancel_kb,
+        )
+
     await callback.answer()
 
 
@@ -195,15 +228,120 @@ async def _confirm_clear_accounts(callback: types.CallbackQuery):
     )
 
 
-@router.callback_query(F.data == "admin:clear_accounts:confirm")
-async def handle_clear_accounts(callback: types.CallbackQuery):
+async def _export_sold_accounts(callback: types.CallbackQuery):
+    from tempfile import NamedTemporaryFile
+    from openpyxl import Workbook
+
     async with async_session() as session:
-        deleted = await clear_all_accounts(session)
+        accounts = await get_sold_accounts_for_export(session)
+
+    if not accounts:
+        await callback.message.edit_text(
+            "📭 Нет проданных аккаунтов.",
+            reply_markup=admin_panel_kb(),
+        )
+        return
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sold Accounts"
+    ws.append(["Login", "Password", "Size", "Price", "Sold To (TG ID)", "Sold At"])
+
+    for a in accounts:
+        ws.append([a.login, a.password, a.size, float(a.price), a.sold_to_user_id or "", str(a.sold_at or "")])
+
+    with NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        wb.save(tmp.name)
+        file_path = tmp.name
+
+    try:
+        await callback.message.answer_document(
+            types.input_file.FSInputFile(file_path, filename="sold_accounts.xlsx"),
+            caption=f"📥 Экспорт: <b>{len(accounts)}</b> проданных аккаунтов",
+            reply_markup=admin_panel_kb(),
+        )
+    finally:
+        os.unlink(file_path)
+
+    await callback.message.edit_text("📥 Экспорт готов. Файл отправлен ниже.")
+    await callback.answer()
+
+
+async def _show_price_edit(callback: types.CallbackQuery):
+    async with async_session() as session:
+        sizes = await get_sizes_list(session)
+
+    if not sizes:
+        await callback.message.edit_text(
+            "📭 Нет тарифов для редактирования.",
+            reply_markup=admin_panel_kb(),
+        )
+        return
+
     await callback.message.edit_text(
-        f"✅ <b>База данных очищена!</b>\nУдалено аккаунтов: <b>{deleted}</b>",
+        "💰 <b>Редактирование цен</b>\n\nВыберите тариф:",
+        reply_markup=sizes_list_kb(sizes),
+    )
+
+
+@router.message(AdminStates.waiting_for_new_price)
+async def handle_new_price(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    size = data.get("editing_size")
+
+    try:
+        new_price = Decimal(message.text)
+        if new_price <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        await message.answer("❌ Введите положительное число.", reply_markup=cancel_kb)
+        return
+
+    async with async_session() as session:
+        updated = await update_price_by_size(session, size, new_price)
+
+    await state.clear()
+    await message.answer(
+        f"✅ <b>Цена обновлена!</b>\n\n"
+        f"💎 Тариф: {size}\n"
+        f"💰 Новая цена: {new_price:.2f} ₽\n"
+        f"📦 Обновлено аккаунтов: <b>{updated}</b>",
         reply_markup=admin_panel_kb(),
     )
-    await callback.answer()
+
+
+async def _check_yookassa(callback: types.CallbackQuery):
+    await callback.message.edit_text("🔄 Проверка ЮKassa...")
+    result = await check_yookassa_connection()
+
+    shop_id = result.get("shop_id", "—")
+    lines = [
+        "🔍 <b>Проверка ЮKassa</b>\n",
+        f"🆔 Shop ID: <code>{shop_id}</code>",
+    ]
+
+    if result.get("ok"):
+        lines.append("✅ <b>Статус:</b> 🟢 Подключение работает")
+        lines.append("")
+        lines.append("📌 <b>Проверьте также:</b>")
+        lines.append("• Webhook URL в настройках ЮKassa")
+        lines.append("  → <code>/yookassa/webhook</code>")
+        lines.append("• IP-белый список (если включён)")
+        lines.append("• Баланс магазина")
+    else:
+        error = result.get("error", "Неизвестная ошибка")
+        lines.append("❌ <b>Статус:</b> 🔴 Ошибка подключения")
+        lines.append(f"⚠️ <code>{html.escape(error[:300])}</code>")
+        lines.append("")
+        lines.append("💡 <b>Проверьте:</b>")
+        lines.append("• <code>YOOKASSA_SHOP_ID</code> в .env")
+        lines.append("• <code>YOOKASSA_SECRET_KEY</code> в .env")
+        lines.append("• Доступ к api.yookassa.ru с сервера")
+
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=admin_panel_kb(),
+    )
 
 
 def _welcome_photo_kb(has_photo: bool) -> types.InlineKeyboardMarkup:
@@ -480,7 +618,6 @@ async def handle_excel(message: types.Message, state: FSMContext):
     try:
         accounts = parse_excel(file_path)
     except Exception as e:
-        os.unlink(file_path)
         await message.answer(f"❌ Ошибка парсинга файла: {e}")
         return
     finally:
@@ -583,7 +720,6 @@ async def promo_type_chosen(callback: types.CallbackQuery, state: FSMContext):
 
     hint = {
         "balance": "Введите сумму пополнения (например: 500)",
-        "discount": "Введите процент скидки (например: 10)",
         "token": "Введите текст токена для выдачи",
     }.get(promo_type, "Введите значение:")
 
@@ -596,7 +732,7 @@ async def promo_value_handler(message: types.Message, state: FSMContext):
     data = await state.get_data()
     promo_type = data.get("promo_type")
 
-    if promo_type in ("balance", "discount"):
+    if promo_type == "balance":
         try:
             value = Decimal(message.text)
             if value <= 0:
@@ -634,11 +770,11 @@ async def promo_uses_handler(message: types.Message, state: FSMContext):
         token = promo_value if promo_type == "token" else None
         promo = await create_promo(
             session, code=code, promo_type=promo_type,
-            value=Decimal(promo_value) if promo_type in ("balance", "discount") else Decimal("0"),
+            value=Decimal(promo_value) if promo_type == "balance" else Decimal("0"),
             max_uses=max_uses, token_value=token,
         )
 
-    display_value = promo_value if promo_type == "token" else f"{promo_value} {'₽' if promo_type == 'balance' else '%'}"
+    display_value = promo_value if promo_type == "token" else f"{promo_value} ₽"
     await state.clear()
     await message.answer(
         f"✅ <b>Промокод создан!</b>\n\n🎟 Код: <code>{promo.code}</code>\n"

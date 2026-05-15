@@ -1,4 +1,7 @@
+import asyncio
 import json
+import logging
+from contextlib import asynccontextmanager
 from decimal import Decimal
 
 from fastapi import FastAPI, Request
@@ -7,12 +10,86 @@ from src.config import settings
 from src.db.database import async_session
 from src.db.repository import (
     create_purchase,
+    delete_pending_payment,
+    get_all_pending_payments,
     get_or_create_user,
+    get_purchase_by_payment_id,
     get_user_by_telegram_id,
     reserve_and_sell_accounts,
 )
+from src.services.yookassa import get_payment_status, register_webhook
 
-app = FastAPI(title="SWApiCode Webhook")
+logger = logging.getLogger(__name__)
+
+
+async def _register_webhook_on_start():
+    result = await register_webhook()
+    if result.get("ok"):
+        note = result.get("note", "")
+        logger.info("Webhook registered %s", f"({note})" if note else "")
+    else:
+        logger.warning("Webhook registration failed: %s", result.get("error"))
+
+
+async def _reconcile_payments():
+    while True:
+        await asyncio.sleep(300)
+        try:
+            async with async_session() as session:
+                pending = await get_all_pending_payments(session)
+
+            for pp in pending:
+                try:
+                    data = await get_payment_status(pp.payment_id)
+                except Exception:
+                    continue
+
+                status = data.get("status")
+                if status == "succeeded":
+                    async with async_session() as session:
+                        existing = await get_purchase_by_payment_id(session, pp.payment_id)
+                        if existing:
+                            await delete_pending_payment(session, pp.payment_id)
+                            continue
+
+                        user = await get_or_create_user(session, pp.telegram_id)
+
+                        if pp.action == "purchase":
+                            logger.info("Reconcile: purchase %s for user %s", pp.payment_id, pp.telegram_id)
+                        else:
+                            user.balance += pp.amount
+                            await create_purchase(
+                                session, user.id, pp.amount, "yookassa_topup", pp.payment_id
+                            )
+                            await session.commit()
+                            await delete_pending_payment(session, pp.payment_id)
+                            try:
+                                from src.bot.bot import bot
+                                await bot.send_message(
+                                    pp.telegram_id,
+                                    f"✅ <b>Баланс пополнен на {pp.amount:.2f} ₽</b>",
+                                )
+                            except Exception:
+                                pass
+                            logger.info("Reconcile: credited %s for user %s", pp.amount, pp.telegram_id)
+
+                elif status == "canceled":
+                    async with async_session() as session:
+                        await delete_pending_payment(session, pp.payment_id)
+                    logger.info("Reconcile: removed canceled payment %s", pp.payment_id)
+        except Exception as e:
+            logger.error("Reconcile error: %s", e)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_reconcile_payments())
+    await _register_webhook_on_start()
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="SWApiCode Webhook", lifespan=lifespan)
 
 
 async def _notify_admins(text: str):
@@ -22,6 +99,14 @@ async def _notify_admins(text: str):
             await bot.send_message(uid, text)
         except Exception:
             pass
+
+
+async def _notify_user(telegram_id: int, text: str):
+    try:
+        from src.bot.bot import bot
+        await bot.send_message(telegram_id, text)
+    except Exception:
+        pass
 
 
 @app.post("/yookassa/webhook")
@@ -55,6 +140,8 @@ async def yookassa_webhook(request: Request):
         if not user:
             user = await get_or_create_user(session, telegram_id, None, None)
 
+        await delete_pending_payment(session, payment_id)
+
         if action == "purchase":
             size = metadata.get("size")
             quantity = int(metadata.get("quantity", "1"))
@@ -72,6 +159,16 @@ async def yookassa_webhook(request: Request):
                     session.add(purchase)
                 await session.commit()
 
+                creds_lines = [f"🔑 <code>{a.login}</code>\n🔐 <code>{a.password}</code>" for a in accounts[:3]]
+                creds_text = "\n\n".join(creds_lines)
+                if len(accounts) > 3:
+                    creds_text += f"\n\n... и ещё {len(accounts) - 3} аккаунтов"
+                await _notify_user(
+                    telegram_id,
+                    f"✅ <b>Покупка успешна!</b>\n\n"
+                    f"{creds_text}\n\n"
+                    f"💵 Списано: {total:.2f} ₽",
+                )
                 await _notify_admins(
                     f"💰 <b>Покупка через ЮKassa</b>\n\n"
                     f"👤 Пользователь: <code>{telegram_id}</code>\n"
@@ -79,10 +176,14 @@ async def yookassa_webhook(request: Request):
                     f"💵 Сумма: {total:.2f} ₽"
                 )
             except ValueError:
-                user.balance += amount
-                await session.commit()
                 await create_purchase(
                     session, user.id, amount, "yookassa_refund", payment_id
+                )
+                user.balance += amount
+                await session.commit()
+                await _notify_user(
+                    telegram_id,
+                    "❌ Аккаунты закончились. Средства возвращены на баланс.",
                 )
                 return {"status": "accounts_unavailable", "credited": True}
 
@@ -93,6 +194,10 @@ async def yookassa_webhook(request: Request):
             )
             await session.commit()
 
+            await _notify_user(
+                telegram_id,
+                f"✅ <b>Баланс пополнен на {amount:.2f} ₽</b>",
+            )
             await _notify_admins(
                 f"💰 <b>Пополнение баланса</b>\n\n"
                 f"👤 Пользователь: <code>{telegram_id}</code>\n"

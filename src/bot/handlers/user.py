@@ -15,7 +15,9 @@ from src.bot.keyboards.inline import (
 from src.bot.states import BuyStates, PromoStates, TopUpStates
 from src.db.database import async_session
 from src.db.repository import (
+    create_pending_payment,
     create_purchase,
+    delete_pending_payment,
     get_available_accounts_by_size,
     get_available_count_by_size,
     get_or_create_user,
@@ -169,6 +171,14 @@ async def quantity_chosen(message: types.Message, state: FSMContext):
         )
         return
 
+    max_qty = settings.purchase_max_quantity
+    if quantity > max_qty:
+        await message.answer(
+            f"❌ Максимум {max_qty} шт. за одну покупку.",
+            reply_markup=cancel_kb,
+        )
+        return
+
     await state.update_data(quantity=quantity)
 
     async with async_session() as session:
@@ -242,6 +252,7 @@ async def pay_with_balance(callback: types.CallbackQuery, state: FSMContext):
                 session.add(purchase)
             await session.commit()
         except ValueError as e:
+            await state.clear()
             await callback.message.edit_text(f"❌ {e}", reply_markup=user_main_kb())
             await callback.answer()
             return
@@ -287,6 +298,10 @@ async def pay_with_yookassa(callback: types.CallbackQuery, state: FSMContext):
         return
 
     await state.update_data(payment_id=payment_id, pending_total=str(total))
+    async with async_session() as session:
+        await create_pending_payment(
+            session, payment_id, callback.from_user.id, "purchase", total
+        )
     await callback.message.edit_text(
         "💳 <b>Ссылка для оплаты:</b>\n\n"
         "После оплаты нажмите /start, чтобы проверить статус.",
@@ -325,7 +340,12 @@ async def top_up_amount(message: types.Message, state: FSMContext):
         await message.answer(f"❌ Ошибка создания платежа: {e}", reply_markup=cancel_kb)
         return
 
-    await state.clear()
+    await state.update_data(payment_id=payment_id, pending_amount=str(amount))
+    await state.set_state(TopUpStates.waiting_for_payment)
+    async with async_session() as session:
+        await create_pending_payment(
+            session, payment_id, message.from_user.id, "topup", amount
+        )
     await message.answer(
         "💳 <b>Ссылка для оплаты:</b>\n\n"
         "После оплаты нажмите /start для проверки баланса.",
@@ -366,11 +386,4 @@ async def promo_apply(message: types.Message, state: FSMContext):
                 f"✅ <b>Получен токен:</b>\n<code>{token_text}</code>",
                 reply_markup=user_main_kb(),
             )
-        elif promo.promo_type == "discount":
-            await message.answer(
-                f"🎉 <b>Скидка {promo.value}%</b> будет применена при следующей покупке.",
-                reply_markup=user_main_kb(),
-            )
-            await state.update_data(discount=float(promo.value))
-
     await state.clear()

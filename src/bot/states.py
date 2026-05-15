@@ -10,6 +10,7 @@ class BuyStates(StatesGroup):
 
 class TopUpStates(StatesGroup):
     entering_amount = State()
+    waiting_for_payment = State()
 
 
 class PromoStates(StatesGroup):

@@ -14,7 +14,8 @@ class Settings(BaseSettings):
     yookassa_secret_key: str = ""
 
     database_url: str = "sqlite+aiosqlite:///data/bot.db"
-    welcome_photo: str = ""
+    public_url: str = ""
+    purchase_max_quantity: int = 10
 
     @property
     def admin_ids_list(self) -> list[int]:

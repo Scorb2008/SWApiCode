@@ -5,7 +5,7 @@ from typing import Sequence
 from sqlalchemy import select, update, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Account, PromoCode, Purchase, User
+from src.db.models import Account, PendingPayment, PromoCode, Purchase, User
 
 
 async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
@@ -329,6 +329,15 @@ async def get_promos_count(session: AsyncSession) -> int:
     return result.scalar() or 0
 
 
+async def get_purchase_by_payment_id(
+    session: AsyncSession, payment_id: str
+) -> Purchase | None:
+    result = await session.execute(
+        select(Purchase).where(Purchase.payment_id == payment_id)
+    )
+    return result.scalar_one_or_none()
+
+
 async def delete_promo(session: AsyncSession, promo_id: int) -> bool:
     promo = await session.get(PromoCode, promo_id)
     if not promo:
@@ -344,3 +353,61 @@ async def clear_all_accounts(session: AsyncSession) -> int:
     await session.execute(Account.__table__.delete())
     await session.commit()
     return total
+
+
+async def create_pending_payment(
+    session: AsyncSession,
+    payment_id: str,
+    telegram_id: int,
+    action: str,
+    amount: Decimal,
+) -> PendingPayment:
+    pp = PendingPayment(
+        payment_id=payment_id,
+        telegram_id=telegram_id,
+        action=action,
+        amount=amount,
+    )
+    session.add(pp)
+    await session.commit()
+    return pp
+
+
+async def delete_pending_payment(session: AsyncSession, payment_id: str) -> bool:
+    result = await session.execute(
+        select(PendingPayment).where(PendingPayment.payment_id == payment_id)
+    )
+    pp = result.scalar_one_or_none()
+    if not pp:
+        return False
+    await session.delete(pp)
+    await session.commit()
+    return True
+
+
+async def get_all_pending_payments(session: AsyncSession) -> Sequence[PendingPayment]:
+    result = await session.execute(
+        select(PendingPayment).order_by(PendingPayment.created_at)
+    )
+    return result.scalars().all()
+
+
+async def get_sold_accounts_for_export(session: AsyncSession) -> Sequence[Account]:
+    result = await session.execute(
+        select(Account)
+        .where(Account.status == "sold")
+        .order_by(Account.sold_at.desc())
+    )
+    return result.scalars().all()
+
+
+async def update_price_by_size(
+    session: AsyncSession, size: str, new_price: Decimal
+) -> int:
+    result = await session.execute(
+        update(Account)
+        .where(Account.size == size)
+        .values(price=new_price)
+    )
+    await session.commit()
+    return result.rowcount

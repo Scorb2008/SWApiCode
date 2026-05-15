@@ -50,7 +50,12 @@ def admin_panel_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🏷 Промокоды", callback_data="admin:promos:0"),
         ],
         [
+            InlineKeyboardButton(text="🔍 ЮKassa", callback_data="admin:check_yookassa"),
             InlineKeyboardButton(text="🗑 Очистить БД", callback_data="admin:clear_accounts"),
+        ],
+        [
+            InlineKeyboardButton(text="📥 Экспорт", callback_data="admin:export"),
+            InlineKeyboardButton(text="💰 Цены", callback_data="admin:edit_prices"),
         ],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:main")],
     ])
@@ -179,7 +184,15 @@ def promos_pagination_kb(promos: list, page: int, total_pages: int) -> InlineKey
 def promo_type_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 Баланс (пополнение)", callback_data="promo_type:balance")],
-        [InlineKeyboardButton(text="🏷 Скидка (процент)", callback_data="promo_type:discount")],
         [InlineKeyboardButton(text="🎟 Токен (выдача)", callback_data="promo_type:token")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
     ])
+
+
+def sizes_list_kb(sizes: list[str]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for s in sizes:
+        builder.button(text=s, callback_data=f"edit_price:{s}")
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:panel"))
+    return builder.as_markup()

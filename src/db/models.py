@@ -55,6 +55,17 @@ class Purchase(Base):
     account: Mapped["Account | None"] = relationship(back_populates="purchase")
 
 
+class PendingPayment(Base):
+    __tablename__ = "pending_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    payment_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger)
+    action: Mapped[str] = mapped_column(String(32))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class PromoCode(Base):
     __tablename__ = "promo_codes"
 
