@@ -115,11 +115,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
                     await delete_pending_payment(session, payment_id)
                 await state.clear()
                 creds = "\n\n".join(
-                    f"🔑 <code>{html.escape(a.login)}</code>\n🔐 <code>{html.escape(a.password)}</code>"
+                    f"🔑 Логин: <code>{html.escape(a.login)}</code>\n🔐 Пароль: <code>{html.escape(a.password)}</code>"
                     for a in accounts
                 )
                 await message.answer(
-                    f"✅ <b>Покупка успешна!</b>\n\n{creds}\n\n💵 Списано: {total:.2f} ₽",
+                    f"✅ <b>Покупка успешна!</b>\n\n"
+                    f"{creds}\n\n"
+                    f"💵 Списано: {total:.2f} ₽"
+                    f"ℹ️ <b>Сайт для входа: https://codex.sale</b>",
                     reply_markup=user_main_kb(),
                 )
                 return
@@ -157,10 +160,10 @@ async def back_to_main(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     is_admin = user_id in settings.admin_ids_list
     kb = admin_main_kb() if is_admin else user_main_kb()
-    await callback.message.edit_text(
-        "👋 Главное меню:",
-        reply_markup=kb,
-    )
+    try:
+        await callback.message.edit_text("👋 Главное меню:", reply_markup=kb)
+    except Exception:
+        await callback.message.answer("👋 Главное меню:", reply_markup=kb)
     await callback.answer()
 
 
@@ -170,10 +173,10 @@ async def cancel_handler(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     is_admin = user_id in settings.admin_ids_list
     kb = admin_main_kb() if is_admin else user_main_kb()
-    await callback.message.edit_text(
-        "❌ Действие отменено.\n\n👋 Главное меню:",
-        reply_markup=kb,
-    )
+    try:
+        await callback.message.edit_text("❌ Действие отменено.\n\n👋 Главное меню:", reply_markup=kb)
+    except Exception:
+        await callback.message.answer("❌ Действие отменено.\n\n👋 Главное меню:", reply_markup=kb)
     await callback.answer()
 
 

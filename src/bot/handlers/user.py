@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from src.bot.keyboards.inline import (
     cancel_kb,
     confirm_purchase_kb,
+    payment_check_kb,
     payment_method_kb,
     size_selection_kb,
     user_main_kb,
@@ -23,12 +24,13 @@ from src.db.repository import (
     get_available_count_by_size,
     get_or_create_user,
     get_promo_by_code,
+    get_purchase_by_payment_id,
     get_purchase_count_by_user,
     get_purchases_by_user,
     reserve_and_sell_accounts,
     use_promo,
 )
-from src.services.yookassa import create_yookassa_payment
+from src.services.yookassa import create_yookassa_payment, get_payment_status
 
 router = Router()
 
@@ -272,6 +274,129 @@ async def pay_with_balance(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data == "check_payment")
+async def check_payment(callback: types.CallbackQuery, state: FSMContext):
+    state_data = await state.get_data()
+    payment_id = state_data.get("payment_id")
+
+    if not payment_id:
+        await callback.message.edit_text(
+            "❌ Нет ожидающего платежа.",
+            reply_markup=user_main_kb(),
+        )
+        await callback.answer()
+        return
+
+    try:
+        payment_data = await get_payment_status(payment_id)
+    except Exception:
+        await callback.message.edit_text(
+            "❌ Ошибка проверки платежа. Попробуйте позже.",
+            reply_markup=user_main_kb(),
+        )
+        await callback.answer()
+        return
+
+    status = payment_data.get("status")
+
+    if status == "succeeded":
+        async with async_session() as session:
+            existing = await get_purchase_by_payment_id(session, payment_id)
+            if existing:
+                await delete_pending_payment(session, payment_id)
+                await state.clear()
+                await callback.message.edit_text(
+                    "✅ Платёж уже обработан.",
+                    reply_markup=user_main_kb(),
+                )
+                await callback.answer()
+                return
+
+        current_state = await state.get_state()
+
+        if current_state == TopUpStates.waiting_for_payment.state:
+            amount = Decimal(state_data.get("pending_amount", "0"))
+            async with async_session() as session:
+                user = await get_or_create_user(session, callback.from_user.id)
+                user.balance += amount
+                session.add(await create_purchase(
+                    session, user.id, amount, "yookassa_topup", payment_id
+                ))
+                await session.commit()
+                await delete_pending_payment(session, payment_id)
+            await state.clear()
+            await callback.message.edit_text(
+                f"✅ <b>Баланс пополнен на {amount:.2f} ₽</b>",
+                reply_markup=user_main_kb(),
+            )
+            await callback.answer()
+            return
+
+        elif current_state == BuyStates.choosing_payment.state:
+            total = Decimal(state_data.get("pending_total", "0"))
+            quantity = int(state_data.get("quantity", 1))
+            size = state_data.get("chosen_size", "")
+            async with async_session() as session:
+                user = await get_or_create_user(session, callback.from_user.id)
+                try:
+                    accounts = await reserve_and_sell_accounts(
+                        session, size, quantity, user.id, total
+                    )
+                    for acc in accounts:
+                        purchase = await create_purchase(
+                            session, user.id, acc.price, "yookassa", payment_id
+                        )
+                        purchase.account_id = acc.id
+                        session.add(purchase)
+                    await session.commit()
+                except ValueError:
+                    await create_purchase(
+                        session, user.id, total, "yookassa_refund", payment_id
+                    )
+                    user.balance += total
+                    await session.commit()
+                    await state.clear()
+                    await callback.message.edit_text(
+                        "❌ Аккаунты закончились. Средства возвращены на баланс.",
+                        reply_markup=user_main_kb(),
+                    )
+                    await callback.answer()
+                    return
+                await delete_pending_payment(session, payment_id)
+            await state.clear()
+            creds = "\n\n".join(
+                f"🔑 <code>{html.escape(a.login)}</code>\n🔐 <code>{html.escape(a.password)}</code>"
+                for a in accounts
+            )
+            await callback.message.edit_text(
+                f"✅ <b>Покупка успешна!</b>\n\n"
+                f"{creds}\n\n"
+                f"💵 Списано: {total:.2f} ₽"
+                f"ℹ️ <b>Сайт для входа: https://codex.sale</b>",
+                reply_markup=user_main_kb(),
+            )
+            await callback.answer()
+            return
+
+    elif status == "canceled":
+        async with async_session() as session:
+            await delete_pending_payment(session, payment_id)
+        await state.clear()
+        await callback.message.edit_text("❌ Платёж отменён.", reply_markup=user_main_kb())
+        await callback.answer()
+        return
+
+    else:
+        await callback.message.edit_text(
+            "⏳ Платёж ещё не подтверждён. Попробуйте позже.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Проверить снова", callback_data="check_payment")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel")],
+            ]),
+        )
+        await callback.answer()
+
+
 @router.callback_query(F.data == "pay:yookassa", BuyStates.choosing_payment)
 async def pay_with_yookassa(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -306,11 +431,8 @@ async def pay_with_yookassa(callback: types.CallbackQuery, state: FSMContext):
         )
     await callback.message.edit_text(
         "💳 <b>Ссылка для оплаты:</b>\n\n"
-        "После оплаты нажмите /start, чтобы проверить статус.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить", url=payment_url)],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:main")],
-        ]),
+        "После оплаты нажмите «Проверить оплату».",
+        reply_markup=payment_check_kb(payment_url),
     )
     await callback.answer()
 
@@ -350,11 +472,8 @@ async def top_up_amount(message: types.Message, state: FSMContext):
         )
     await message.answer(
         "💳 <b>Ссылка для оплаты:</b>\n\n"
-        "После оплаты нажмите /start для проверки баланса.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить", url=payment_url)],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:main")],
-        ]),
+        "После оплаты нажмите «Проверить оплату».",
+        reply_markup=payment_check_kb(payment_url),
     )
 
 

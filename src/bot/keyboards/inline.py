@@ -82,6 +82,14 @@ def broadcast_confirm_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def payment_check_kb(payment_url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить", url=payment_url)],
+        [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data="check_payment")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="cancel")],
+    ])
+
+
 def size_selection_kb(sizes: list[tuple[str, int]]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for size, count in sizes:

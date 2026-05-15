@@ -159,7 +159,7 @@ async def yookassa_webhook(request: Request):
                     session.add(purchase)
                 await session.commit()
 
-                creds_lines = [f"🔑 <code>{a.login}</code>\n🔐 <code>{a.password}</code>" for a in accounts[:3]]
+                creds_lines = [f"🔑 Логин: <code>{a.login}</code>\n🔐 Пароль: <code>{a.password}</code>" for a in accounts[:3]]
                 creds_text = "\n\n".join(creds_lines)
                 if len(accounts) > 3:
                     creds_text += f"\n\n... и ещё {len(accounts) - 3} аккаунтов"
@@ -167,7 +167,8 @@ async def yookassa_webhook(request: Request):
                     telegram_id,
                     f"✅ <b>Покупка успешна!</b>\n\n"
                     f"{creds_text}\n\n"
-                    f"💵 Списано: {total:.2f} ₽",
+                    f"💵 Списано: {total:.2f} ₽"
+                    f"ℹ️ <b>Сайт для входа: https://codex.sale</b>",
                 )
                 await _notify_admins(
                     f"💰 <b>Покупка через ЮKassa</b>\n\n"
