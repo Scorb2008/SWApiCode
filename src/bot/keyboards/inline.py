@@ -2,8 +2,17 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
+def _support_url() -> str:
+    from src.config import settings
+    if settings.support_contact:
+        if settings.support_contact.startswith("@"):
+            return f"https://t.me/{settings.support_contact.lstrip('@')}"
+        return f"tg://user?id={settings.support_contact}"
+    return ""
+
+
 def user_main_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    kb = [
         [InlineKeyboardButton(text="🛒 Купить токен", callback_data="menu:buy")],
         [
             InlineKeyboardButton(text="👤 Профиль", callback_data="menu:profile"),
@@ -13,11 +22,15 @@ def user_main_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="💰 Пополнить", callback_data="menu:topup"),
             InlineKeyboardButton(text="🎟 Промокод", callback_data="menu:promo"),
         ],
-    ])
+    ]
+    url = _support_url()
+    if url:
+        kb.append([InlineKeyboardButton(text="🆘 Поддержка", url=url)])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def admin_main_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    kb = [
         [InlineKeyboardButton(text="🛒 Купить токен", callback_data="menu:buy")],
         [
             InlineKeyboardButton(text="👤 Профиль", callback_data="menu:profile"),
@@ -28,7 +41,11 @@ def admin_main_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🎟 Промокод", callback_data="menu:promo"),
         ],
         [InlineKeyboardButton(text="⚙️ Админ панель", callback_data="admin:panel")],
-    ])
+    ]
+    url = _support_url()
+    if url:
+        kb.insert(-1, [InlineKeyboardButton(text="🆘 Поддержка", url=url)])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def admin_panel_kb() -> InlineKeyboardMarkup:

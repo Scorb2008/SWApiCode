@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///data/bot.db"
     public_url: str = ""
     purchase_max_quantity: int = 10
+    support_contact: str = ""
 
     @property
     def admin_ids_list(self) -> list[int]:
