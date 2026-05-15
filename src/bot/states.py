@@ -26,6 +26,7 @@ class AdminStates(StatesGroup):
     creating_promo_value = State()
     creating_promo_uses = State()
     waiting_for_welcome_photo = State()
+    waiting_for_new_price = State()
 
 
 class BroadcastStates(StatesGroup):
