@@ -336,3 +336,11 @@ async def delete_promo(session: AsyncSession, promo_id: int) -> bool:
     await session.delete(promo)
     await session.commit()
     return True
+
+
+async def clear_all_accounts(session: AsyncSession) -> int:
+    result = await session.execute(select(func.count(Account.id)))
+    total = result.scalar() or 0
+    await session.execute(Account.__table__.delete())
+    await session.commit()
+    return total

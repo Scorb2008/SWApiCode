@@ -14,6 +14,7 @@ from src.bot.keyboards.inline import (
     admin_panel_kb,
     broadcast_confirm_kb,
     cancel_kb,
+    clear_accounts_confirm_kb,
     promo_type_kb,
     promos_pagination_kb,
     user_card_kb,
@@ -23,6 +24,7 @@ from src.bot.states import AdminStates, BroadcastStates
 from src.config import settings
 from src.db.database import async_session
 from src.db.repository import (
+    clear_all_accounts,
     create_promo,
     delete_promo,
     get_accounts_count_by_size_and_status,
@@ -175,6 +177,32 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
     elif cmd == "purchases" and len(action) > 2:
         await _show_user_purchases(callback, int(action[2]))
 
+    elif cmd == "clear_accounts":
+        await _confirm_clear_accounts(callback)
+
+    await callback.answer()
+
+
+async def _confirm_clear_accounts(callback: types.CallbackQuery):
+    async with async_session() as session:
+        total = await get_total_accounts_count(session)
+    await callback.message.edit_text(
+        f"⚠️ <b>Очистка базы данных</b>\n\n"
+        f"Будут удалены все аккаунты (<b>{total} шт.</b>).\n"
+        f"Пользователи, покупки и промокоды останутся.\n\n"
+        "Вы уверены?",
+        reply_markup=clear_accounts_confirm_kb(),
+    )
+
+
+@router.callback_query(F.data == "admin:clear_accounts:confirm")
+async def handle_clear_accounts(callback: types.CallbackQuery):
+    async with async_session() as session:
+        deleted = await clear_all_accounts(session)
+    await callback.message.edit_text(
+        f"✅ <b>База данных очищена!</b>\nУдалено аккаунтов: <b>{deleted}</b>",
+        reply_markup=admin_panel_kb(),
+    )
     await callback.answer()
 
 

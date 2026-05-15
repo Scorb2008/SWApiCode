@@ -49,6 +49,9 @@ def admin_panel_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="👥 Юзеры", callback_data="admin:users:0"),
             InlineKeyboardButton(text="🏷 Промокоды", callback_data="admin:promos:0"),
         ],
+        [
+            InlineKeyboardButton(text="🗑 Очистить БД", callback_data="admin:clear_accounts"),
+        ],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:main")],
     ])
 
@@ -56,6 +59,13 @@ def admin_panel_kb() -> InlineKeyboardMarkup:
 cancel_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
 ])
+
+
+def clear_accounts_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 Да, удалить всё", callback_data="admin:clear_accounts:confirm")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="admin:panel")],
+    ])
 
 
 def broadcast_confirm_kb() -> InlineKeyboardMarkup:
