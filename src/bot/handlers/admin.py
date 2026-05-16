@@ -169,7 +169,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
 
     elif cmd.startswith("promos"):
         page = int(action[2]) if len(action) > 2 else 0
-        await _show_promos_page(callback, page)
+        await _show_promos_page(callback, page, state)
 
     elif cmd == "delete_promo" and len(action) > 2:
         await _delete_promo(callback, int(action[2]))
@@ -533,13 +533,15 @@ async def _show_users_page(callback: types.CallbackQuery, page: int):
     )
 
 
-async def _show_promos_page(callback: types.CallbackQuery, page: int):
+async def _show_promos_page(callback: types.CallbackQuery, page: int, state: FSMContext | None = None):
     async with async_session() as session:
         total = await get_promos_count(session)
         total_pages = max(1, (total + PROMOS_PER_PAGE - 1) // PROMOS_PER_PAGE)
         promos = await get_promos_paginated(session, page * PROMOS_PER_PAGE, PROMOS_PER_PAGE)
 
     if not promos:
+        if state:
+            await state.set_state(AdminStates.creating_promo_type)
         await _safe_edit(callback, text=
             "📭 Нет промокодов.\n\nСоздайте новый:",
             reply_markup=promo_type_kb(),
