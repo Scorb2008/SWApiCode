@@ -1,14 +1,10 @@
 import asyncio
 import json
 import logging
-import random
-import string
 from datetime import datetime
-from decimal import Decimal
 
 from src.config import settings
 from src.db.database import async_session
-from src.db.models import PromoCode
 from src.db.repository import get_available_accounts_by_size, get_sizes_list
 
 logger = logging.getLogger(__name__)
@@ -94,17 +90,6 @@ async def _handle_new_order(acc, order):
         account = available[0]
         account.status = "sold"
         account.sold_at = datetime.now()
-
-        code = _generate_code()
-        promo = PromoCode(
-            code=code,
-            promo_type="token",
-            value=Decimal("0"),
-            token_value=f"{account.login}:{account.password}",
-            max_uses=1,
-            is_active=True,
-        )
-        session.add(promo)
         await session.commit()
 
     chat = _get_chat(acc, buyer_username)
@@ -112,8 +97,9 @@ async def _handle_new_order(acc, order):
         acc.send_message(
             chat.id,
             f"✅ Оплата подтверждена!\n\n"
-            f"Ваш промокод: {code}\n\n"
-            f"Перейдите в бота и введите этот код, чтобы получить доступ.",
+            f"Логин: {account.login}\n"
+            f"Пароль: {account.password}\n\n"
+            f"Сайт для входа: https://codex.sale",
         )
 
     await _notify_admins(
@@ -121,12 +107,12 @@ async def _handle_new_order(acc, order):
         f"👤 Покупатель: @{buyer_username}\n"
         f"💎 Тариф: {size}\n"
         f"💵 Сумма: {price:.2f} ₽\n"
-        f"🎟 Промокод: <code>{code}</code>\n"
-        f"📦 Заказ: #{order.id}"
+        f"📦 Заказ: #{order.id}\n"
+        f"🔑 Аккаунт: {account.login}"
     )
     logger.info(
-        "FunPay: fulfilled order #%s — promo %s for %s",
-        order.id, code, buyer_username,
+        "FunPay: fulfilled order #%s — account %s for @%s",
+        order.id, account.login, buyer_username,
     )
 
 
@@ -164,10 +150,6 @@ def _get_chat(acc, username: str):
         return acc.get_chat_by_name(username, make_request=True)
     except Exception:
         return None
-
-
-def _generate_code(length: int = 10) -> str:
-    return "FP" + "".join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
 
 async def _notify_admins(text: str):
