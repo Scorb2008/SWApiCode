@@ -173,7 +173,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
         await _show_promos_page(callback, page, state)
 
     elif cmd == "delete_promo" and len(action) > 2:
-        await _delete_promo(callback, int(action[2]))
+        await _delete_promo(callback, int(action[2]), state)
 
     elif cmd == "ban" and len(action) > 2:
         await _toggle_ban(callback, int(action[2]), banned=True)
@@ -556,14 +556,14 @@ async def _show_promos_page(callback: types.CallbackQuery, page: int, state: FSM
     )
 
 
-async def _delete_promo(callback: types.CallbackQuery, promo_id: int):
+async def _delete_promo(callback: types.CallbackQuery, promo_id: int, state: FSMContext | None = None):
     async with async_session() as session:
         ok = await delete_promo(session, promo_id)
     await callback.answer(
         "✅ Промокод удалён." if ok else "❌ Промокод не найден.",
         show_alert=True,
     )
-    await _show_promos_page(callback, 0)
+    await _show_promos_page(callback, 0, state)
 
 
 async def _toggle_ban(callback: types.CallbackQuery, target_tg_id: int, banned: bool):
