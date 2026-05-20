@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     public_url: str = ""
     purchase_max_quantity: int = 10
     support_contact: str = ""
+    channel_url: str = ""
+    privacy_policy_url: str = "https://telegra.ph/Politika-konfidencialnosti-04-01-26"
+    user_agreement_url: str = "https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19"
 
     @property
     def admin_ids_list(self) -> list[int]:

@@ -1,4 +1,5 @@
 import asyncio
+import html
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -55,7 +56,62 @@ async def _reconcile_payments():
                         user = await get_or_create_user(session, pp.telegram_id)
 
                         if pp.action == "purchase":
-                            logger.info("Reconcile: purchase %s for user %s", pp.payment_id, pp.telegram_id)
+                            metadata = data.get("metadata", {}) or {}
+                            size = metadata.get("size")
+                            quantity = int(metadata.get("quantity", "1"))
+                            total = Decimal(metadata.get("total", "0"))
+
+                            if not size:
+                                logger.warning("Reconcile: missing size metadata for %s", pp.payment_id)
+                                continue
+
+                            try:
+                                accounts = await reserve_and_sell_accounts(
+                                    session, size, quantity, user.id, total
+                                )
+                                for acc in accounts:
+                                    purchase = await create_purchase(
+                                        session, user.id, acc.price, "yookassa", pp.payment_id
+                                    )
+                                    purchase.account_id = acc.id
+                                await session.commit()
+                                await delete_pending_payment(session, pp.payment_id)
+
+                                creds_lines = [
+                                    f"🔑 Логин: <code>{html.escape(a.login)}</code>\n🔐 Пароль: <code>{html.escape(a.password)}</code>"
+                                    for a in accounts[:3]
+                                ]
+                                creds_text = "\n\n".join(creds_lines)
+                                if len(accounts) > 3:
+                                    creds_text += f"\n\n... и ещё {len(accounts) - 3} аккаунтов"
+
+                                await _notify_user(
+                                    pp.telegram_id,
+                                    f"✅ <b>Покупка успешна!</b>\n\n"
+                                    f"{creds_text}\n\n"
+                                    f"💵 Списано: {total:.2f} ₽\n"
+                                    f"ℹ️ <b>Сайт для входа: https://codex.sale</b>",
+                                )
+                                await _notify_admins(
+                                    f"💰 <b>Покупка через ЮKassa</b>\n\n"
+                                    f"👤 Пользователь: <code>{pp.telegram_id}</code>\n"
+                                    f"💎 Тариф: {size} x{quantity}\n"
+                                    f"💵 Сумма: {total:.2f} ₽"
+                                )
+                                logger.info("Reconcile: fulfilled purchase %s for user %s", pp.payment_id, pp.telegram_id)
+                            except ValueError:
+                                await create_purchase(
+                                    session, user.id, pp.amount, "yookassa_refund", pp.payment_id
+                                )
+                                user.balance += pp.amount
+                                await session.commit()
+                                await delete_pending_payment(session, pp.payment_id)
+                                await _notify_user(
+                                    pp.telegram_id,
+                                    "❌ Аккаунты закончились. Средства возвращены на баланс.",
+                                )
+                                logger.info("Reconcile: refunded %s for user %s", pp.amount, pp.telegram_id)
+
                         else:
                             user.balance += pp.amount
                             await create_purchase(
@@ -156,7 +212,6 @@ async def yookassa_webhook(request: Request):
                         session, user.id, acc.price, "yookassa", payment_id
                     )
                     purchase.account_id = acc.id
-                    session.add(purchase)
                 await session.commit()
 
                 creds_lines = [f"🔑 Логин: <code>{a.login}</code>\n🔐 Пароль: <code>{a.password}</code>" for a in accounts[:3]]
@@ -167,7 +222,7 @@ async def yookassa_webhook(request: Request):
                     telegram_id,
                     f"✅ <b>Покупка успешна!</b>\n\n"
                     f"{creds_text}\n\n"
-                    f"💵 Списано: {total:.2f} ₽"
+                    f"💵 Списано: {total:.2f} ₽\n"
                     f"ℹ️ <b>Сайт для входа: https://codex.sale</b>",
                 )
                 await _notify_admins(

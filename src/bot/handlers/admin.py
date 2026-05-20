@@ -1,3 +1,4 @@
+import html
 import os
 import random
 import string
@@ -5,6 +6,7 @@ import tempfile
 from decimal import Decimal
 
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import ContentType
 
@@ -51,7 +53,6 @@ from src.db.repository import (
 from src.services.excel_parser import parse_excel
 from src.services.settings import get_setting, set_setting
 from src.services.yookassa import check_yookassa_connection
-import html
 
 router = Router()
 
@@ -61,7 +62,7 @@ PROMOS_PER_PAGE = 10
 async def _safe_edit(callback: types.CallbackQuery, **kwargs):
     try:
         await callback.message.edit_text(**kwargs)
-    except Exception:
+    except TelegramBadRequest:
         await callback.message.answer(**kwargs)
 
 
@@ -211,7 +212,7 @@ async def admin_menu_router(callback: types.CallbackQuery, state: FSMContext):
     elif cmd == "edit_prices":
         await _show_price_edit(callback)
 
-    elif cmd.startswith("edit_price:"):
+    elif cmd == "edit_price" and len(action) > 2:
         size = action[2]
         await state.update_data(editing_size=size)
         await state.set_state(AdminStates.waiting_for_new_price)
@@ -504,7 +505,7 @@ async def _show_user_card(callback: types.CallbackQuery, target_tg_id: int):
     text = (
         f"👤 <b>Пользователь</b>\n\n"
         f"🆔 ID: <code>{user.telegram_id}</code>\n"
-        f"📛 Имя: {user.full_name or '—'}\n"
+        f"📛 Имя: {html.escape(user.full_name or '—')}\n"
         f"🌐 Username: @{user.username or '—'}\n"
         f"📅 Регистрация: {user.registered_at.strftime('%d.%m.%Y %H:%M')}\n"
         f"💰 Баланс: <b>{user.balance:.2f} ₽</b>\n"
@@ -627,8 +628,8 @@ async def handle_excel(message: types.Message, state: FSMContext):
 
     try:
         accounts = parse_excel(file_path)
-    except Exception as e:
-        await message.answer(f"❌ Ошибка парсинга файла: {e}")
+    except Exception:
+        await message.answer("❌ Ошибка парсинга файла. Проверьте формат .xlsx.")
         return
     finally:
         os.unlink(file_path)
@@ -667,7 +668,7 @@ async def search_user_handler(message: types.Message, state: FSMContext):
         text = (
             f"👤 <b>Пользователь найден</b>\n\n"
             f"🆔 ID: <code>{u.telegram_id}</code>\n"
-            f"📛 Имя: {u.full_name or '—'}\n"
+            f"📛 Имя: {html.escape(u.full_name or '—')}\n"
             f"🌐 Username: @{u.username or '—'}\n"
             f"📅 Регистрация: {u.registered_at.strftime('%d.%m.%Y %H:%M')}\n"
             f"💰 Баланс: <b>{u.balance:.2f} ₽</b>\n"

@@ -4,11 +4,23 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 def _support_url() -> str:
     from src.config import settings
-    if settings.support_contact:
-        if settings.support_contact.startswith("@"):
-            return f"https://t.me/{settings.support_contact.lstrip('@')}"
-        return f"tg://user?id={settings.support_contact}"
-    return ""
+    if not settings.support_contact:
+        return ""
+    contact = settings.support_contact
+    if "@" in contact and not contact.startswith("@"):
+        return f"mailto:{contact}"
+    if contact.startswith("@"):
+        return f"https://t.me/{contact.lstrip('@')}"
+    return f"tg://user?id={contact}"
+
+
+DOC_CALLBACK_PRIVACY = "doc:privacy"
+DOC_CALLBACK_AGREEMENT = "doc:agreement"
+
+
+def _channel_url() -> str:
+    from src.config import settings
+    return settings.channel_url
 
 
 def user_main_kb() -> InlineKeyboardMarkup:
@@ -26,6 +38,13 @@ def user_main_kb() -> InlineKeyboardMarkup:
     url = _support_url()
     if url:
         kb.append([InlineKeyboardButton(text="🆘 Поддержка", url=url)])
+    ch_url = _channel_url()
+    if ch_url:
+        kb.append([InlineKeyboardButton(text="📢 Канал", url=ch_url)])
+    kb.append([
+        InlineKeyboardButton(text="📄 Политика", callback_data=DOC_CALLBACK_PRIVACY),
+        InlineKeyboardButton(text="📄 Соглашение", callback_data=DOC_CALLBACK_AGREEMENT),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
@@ -40,11 +59,18 @@ def admin_main_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="💰 Пополнить", callback_data="menu:topup"),
             InlineKeyboardButton(text="🎟 Промокод", callback_data="menu:promo"),
         ],
-        [InlineKeyboardButton(text="⚙️ Админ панель", callback_data="admin:panel")],
     ]
     url = _support_url()
     if url:
-        kb.insert(-1, [InlineKeyboardButton(text="🆘 Поддержка", url=url)])
+        kb.append([InlineKeyboardButton(text="🆘 Поддержка", url=url)])
+    ch_url = _channel_url()
+    if ch_url:
+        kb.append([InlineKeyboardButton(text="📢 Канал", url=ch_url)])
+    kb.append([InlineKeyboardButton(text="⚙️ Админ панель", callback_data="admin:panel")])
+    kb.append([
+        InlineKeyboardButton(text="📄 Политика", callback_data=DOC_CALLBACK_PRIVACY),
+        InlineKeyboardButton(text="📄 Соглашение", callback_data=DOC_CALLBACK_AGREEMENT),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
@@ -217,7 +243,7 @@ def promo_type_kb() -> InlineKeyboardMarkup:
 def sizes_list_kb(sizes: list[str]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for s in sizes:
-        builder.button(text=s, callback_data=f"edit_price:{s}")
+        builder.button(text=s, callback_data=f"admin:edit_price:{s}")
     builder.adjust(1)
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:panel"))
     return builder.as_markup()

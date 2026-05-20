@@ -38,10 +38,19 @@ async def get_or_create_user(
     return await create_user(session, telegram_id, username, full_name)
 
 
+async def _get_user_or_raise(session: AsyncSession, user_id: int) -> User:
+    user = await session.get(User, user_id)
+    if not user:
+        raise ValueError(f"User {user_id} not found")
+    return user
+
+
 async def update_balance(
     session: AsyncSession, user_id: int, amount: Decimal
 ) -> User:
-    user = await session.get(User, user_id)
+    user = await _get_user_or_raise(session, user_id)
+    if user.balance + amount < 0:
+        raise ValueError("Insufficient balance")
     user.balance = user.balance + amount
     await session.commit()
     return user
@@ -50,14 +59,16 @@ async def update_balance(
 async def set_balance(
     session: AsyncSession, user_id: int, amount: Decimal
 ) -> User:
-    user = await session.get(User, user_id)
+    user = await _get_user_or_raise(session, user_id)
+    if amount < 0:
+        raise ValueError("Balance cannot be negative")
     user.balance = amount
     await session.commit()
     return user
 
 
 async def set_ban_status(session: AsyncSession, user_id: int, banned: bool) -> User:
-    user = await session.get(User, user_id)
+    user = await _get_user_or_raise(session, user_id)
     user.is_banned = banned
     await session.commit()
     return user
@@ -217,7 +228,6 @@ async def reserve_and_sell_accounts(
         acc.sold_to_user_id = user_id
         acc.sold_at = now
 
-    await session.commit()
     return accounts
 
 
@@ -285,10 +295,20 @@ async def get_promo_by_code(session: AsyncSession, code: str) -> PromoCode | Non
 
 
 async def use_promo(session: AsyncSession, promo: PromoCode) -> PromoCode:
-    promo.used_count += 1
+    result = await session.execute(
+        update(PromoCode)
+        .where(
+            PromoCode.id == promo.id,
+            PromoCode.used_count < PromoCode.max_uses,
+            PromoCode.is_active.is_(True),
+        )
+        .values(used_count=PromoCode.used_count + 1)
+    )
+    if result.rowcount == 0:
+        raise ValueError("Promo has been exhausted or deactivated")
+    await session.refresh(promo)
     if promo.used_count >= promo.max_uses:
         promo.is_active = False
-    await session.commit()
     return promo
 
 

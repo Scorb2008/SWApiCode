@@ -212,7 +212,7 @@ async def confirm_purchase(callback: types.CallbackQuery, state: FSMContext):
     total = Decimal(data["total"])
 
     await state.set_state(BuyStates.choosing_payment)
-    await state.update_data(pending_price=str(total))
+    await state.update_data(pending_total=str(total))
     await callback.message.edit_text(
         f"💵 <b>К оплате: {total:.2f} ₽</b>\n\nВыберите способ оплаты:",
         reply_markup=payment_method_kb(),
@@ -253,7 +253,6 @@ async def pay_with_balance(callback: types.CallbackQuery, state: FSMContext):
             for acc in accounts:
                 purchase = await create_purchase(session, user.id, acc.price, "balance")
                 purchase.account_id = acc.id
-                session.add(purchase)
             await session.commit()
         except ValueError as e:
             await state.clear()
@@ -347,7 +346,6 @@ async def check_payment(callback: types.CallbackQuery, state: FSMContext):
                             session, user.id, acc.price, "yookassa", payment_id
                         )
                         purchase.account_id = acc.id
-                        session.add(purchase)
                     await session.commit()
                 except ValueError:
                     await create_purchase(
@@ -371,7 +369,7 @@ async def check_payment(callback: types.CallbackQuery, state: FSMContext):
             await callback.message.edit_text(
                 f"✅ <b>Покупка успешна!</b>\n\n"
                 f"{creds}\n\n"
-                f"💵 Списано: {total:.2f} ₽"
+                f"💵 Списано: {total:.2f} ₽\n"
                 f"ℹ️ <b>Сайт для входа: https://codex.sale</b>",
                 reply_markup=user_main_kb(),
             )
@@ -418,7 +416,7 @@ async def pay_with_yookassa(callback: types.CallbackQuery, state: FSMContext):
         )
     except Exception as e:
         await callback.message.edit_text(
-            f"❌ Ошибка создания платежа: {e}",
+            "❌ Ошибка создания платежа. Попробуйте позже.",
             reply_markup=payment_method_kb(),
         )
         await callback.answer()
@@ -461,7 +459,7 @@ async def top_up_amount(message: types.Message, state: FSMContext):
             },
         )
     except Exception as e:
-        await message.answer(f"❌ Ошибка создания платежа: {e}", reply_markup=cancel_kb)
+        await message.answer("❌ Ошибка создания платежа. Попробуйте позже.", reply_markup=cancel_kb)
         return
 
     await state.update_data(payment_id=payment_id, pending_amount=str(amount))
@@ -491,20 +489,26 @@ async def promo_apply(message: types.Message, state: FSMContext):
 
         user = await get_or_create_user(session, message.from_user.id)
 
-        if promo.promo_type == "balance":
-            user.balance += promo.value
-            await use_promo(session, promo)
-            await session.commit()
+        try:
+            if promo.promo_type == "balance":
+                user.balance += promo.value
+                await use_promo(session, promo)
+                await session.commit()
+                await message.answer(
+                    f"✅ <b>Баланс пополнен на {promo.value:.2f} ₽</b>",
+                    reply_markup=user_main_kb(),
+                )
+            elif promo.promo_type == "token":
+                token_text = html.escape(promo.token_value or str(promo.value))
+                await use_promo(session, promo)
+                await session.commit()
+                await message.answer(
+                    f"✅ <b>Получен токен:</b>\n<code>{token_text}</code>",
+                    reply_markup=user_main_kb(),
+                )
+        except ValueError:
             await message.answer(
-                f"✅ <b>Баланс пополнен на {promo.value:.2f} ₽</b>",
-                reply_markup=user_main_kb(),
-            )
-        elif promo.promo_type == "token":
-            token_text = html.escape(promo.token_value or str(promo.value))
-            await use_promo(session, promo)
-            await session.commit()
-            await message.answer(
-                f"✅ <b>Получен токен:</b>\n<code>{token_text}</code>",
+                "❌ Промокод уже использован или неактивен.",
                 reply_markup=user_main_kb(),
             )
     await state.clear()

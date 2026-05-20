@@ -48,7 +48,7 @@ class Purchase(Base):
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     payment_method: Mapped[str] = mapped_column(String(32))
-    payment_id: Mapped[str | None] = mapped_column(String(128))
+    payment_id: Mapped[str | None] = mapped_column(String(128), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="purchases")

@@ -2,6 +2,7 @@ import html
 from decimal import Decimal
 
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 
@@ -71,9 +72,9 @@ async def cmd_start(message: types.Message, state: FSMContext):
                 async with async_session() as session:
                     user = await get_or_create_user(session, message.from_user.id)
                     user.balance += amount
-                    session.add(await create_purchase(
+                    await create_purchase(
                         session, user.id, amount, "yookassa_topup", payment_id
-                    ))
+                    )
                     await session.commit()
                     await delete_pending_payment(session, payment_id)
                 await state.clear()
@@ -98,7 +99,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
                                 session, user.id, acc.price, "yookassa", payment_id
                             )
                             purchase.account_id = acc.id
-                            session.add(purchase)
                         await session.commit()
                     except ValueError:
                         await create_purchase(
@@ -121,7 +121,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
                 await message.answer(
                     f"✅ <b>Покупка успешна!</b>\n\n"
                     f"{creds}\n\n"
-                    f"💵 Списано: {total:.2f} ₽"
+                    f"💵 Списано: {total:.2f} ₽\n"
                     f"ℹ️ <b>Сайт для входа: https://codex.sale</b>",
                     reply_markup=user_main_kb(),
                 )
@@ -143,7 +143,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
     kb = admin_main_kb() if user.is_admin else user_main_kb()
     text = (
-        f"👋 Добро пожаловать, {message.from_user.full_name}!\n\n"
+        f"👋 Добро пожаловать, {html.escape(message.from_user.full_name or '')}!\n\n"
         "Здесь вы можете приобрести аккаунты Codex API.\n"
         "Используйте кнопки ниже для навигации."
     )
@@ -162,7 +162,7 @@ async def back_to_main(callback: types.CallbackQuery, state: FSMContext):
     kb = admin_main_kb() if is_admin else user_main_kb()
     try:
         await callback.message.edit_text("👋 Главное меню:", reply_markup=kb)
-    except Exception:
+    except TelegramBadRequest:
         await callback.message.answer("👋 Главное меню:", reply_markup=kb)
     await callback.answer()
 
@@ -175,7 +175,7 @@ async def cancel_handler(callback: types.CallbackQuery, state: FSMContext):
     kb = admin_main_kb() if is_admin else user_main_kb()
     try:
         await callback.message.edit_text("❌ Действие отменено.\n\n👋 Главное меню:", reply_markup=kb)
-    except Exception:
+    except TelegramBadRequest:
         await callback.message.answer("❌ Действие отменено.\n\n👋 Главное меню:", reply_markup=kb)
     await callback.answer()
 
