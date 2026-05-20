@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import random
 import string
@@ -16,19 +17,15 @@ FUNPAY_ENABLED = False
 
 
 async def start_funpay_listener():
-    """Starts the FunPay order listener in a background task."""
     global FUNPAY_ENABLED
-
-    if not settings.funpay_golden_key or not settings.funpay_lot_id:
-        logger.info("FunPay: not configured (FUNPAY_GOLDEN_KEY or FUNPAY_LOT_ID missing)")
+    if not settings.funpay_golden_key:
+        logger.info("FunPay: not configured (FUNPAY_GOLDEN_KEY missing)")
         return
-
     FUNPAY_ENABLED = True
     asyncio.create_task(_run_listener())
 
 
 async def _run_listener():
-    """Runs the FunPay event listener loop."""
     from FunPayAPI import Account, Runner, enums
 
     try:
@@ -49,7 +46,6 @@ async def _run_listener():
 
 
 async def _handle_new_order(acc, order):
-    """Handle a new FunPay order: reserve account, create promo, notify buyer."""
     description = order.description or ""
     price = order.price
     buyer_username = order.buyer_username
@@ -58,19 +54,39 @@ async def _handle_new_order(acc, order):
         order.id, description, price, buyer_username,
     )
 
-    size = _detect_size(description)
-
     async with async_session() as session:
-        available = await get_available_accounts_by_size(session, size)
-        if not available:
-            msg = f"❌ Нет доступных аккаунтов {size} для заказа FunPay #{order.id}"
+        size = await _resolve_size(session, description)
+        if not size:
+            sizes = await get_sizes_list(session)
+            msg = (
+                f"❌ FunPay заказ #{order.id}: не удалось определить тариф.\n"
+                f"Описание: {description}\n"
+                f"Покупатель: @{buyer_username}\n"
+                f"Сумма: {price:.2f} ₽\n\n"
+                f"Доступные размеры в БД: {', '.join(sizes) or '—'}\n"
+                f"Проверьте FUNPAY_LOT_MAPPING в .env"
+            )
             logger.warning("FunPay: %s", msg)
             await _notify_admins(msg)
-            chat = acc.get_chat_by_name(buyer_username, make_request=True)
+            chat = _get_chat(acc, buyer_username)
             if chat:
                 acc.send_message(
                     chat.id,
-                    "😕 К сожалению, аккаунты этого тарифа закончились. "
+                    "Не удалось определить тариф. Свяжитесь с поддержкой, "
+                    "приложив номер заказа.",
+                )
+            return
+
+        available = await get_available_accounts_by_size(session, size)
+        if not available:
+            msg = f"❌ FunPay заказ #{order.id}: нет аккаунтов {size}"
+            logger.warning("FunPay: %s", msg)
+            await _notify_admins(msg)
+            chat = _get_chat(acc, buyer_username)
+            if chat:
+                acc.send_message(
+                    chat.id,
+                    "К сожалению, аккаунты этого тарифа закончились. "
                     "Свяжитесь с поддержкой для решения вопроса.",
                 )
             return
@@ -91,45 +107,63 @@ async def _handle_new_order(acc, order):
         session.add(promo)
         await session.commit()
 
-        chat = acc.get_chat_by_name(buyer_username, make_request=True)
-        if chat:
-            acc.send_message(
-                chat.id,
-                f"✅ <b>Оплата подтверждена!</b>\n\n"
-                f"Ваш промокод: <code>{code}</code>\n\n"
-                f"Перейдите в бота и введите этот код, чтобы получить доступ.",
-            )
-
-        await _notify_admins(
-            f"💰 <b>Продажа через FunPay</b>\n\n"
-            f"👤 Покупатель: @{buyer_username}\n"
-            f"💎 Тариф: {size}\n"
-            f"💵 Сумма: {price:.2f} ₽\n"
-            f"🎟 Промокод: <code>{code}</code>\n"
-            f"📦 Заказ: #{order.id}"
-        )
-        logger.info(
-            "FunPay: fulfilled order #%s — promo %s for %s",
-            order.id, code, buyer_username,
+    chat = _get_chat(acc, buyer_username)
+    if chat:
+        acc.send_message(
+            chat.id,
+            f"✅ Оплата подтверждена!\n\n"
+            f"Ваш промокод: {code}\n\n"
+            f"Перейдите в бота и введите этот код, чтобы получить доступ.",
         )
 
+    await _notify_admins(
+        f"💰 <b>Продажа через FunPay</b>\n\n"
+        f"👤 Покупатель: @{buyer_username}\n"
+        f"💎 Тариф: {size}\n"
+        f"💵 Сумма: {price:.2f} ₽\n"
+        f"🎟 Промокод: <code>{code}</code>\n"
+        f"📦 Заказ: #{order.id}"
+    )
+    logger.info(
+        "FunPay: fulfilled order #%s — promo %s for %s",
+        order.id, code, buyer_username,
+    )
 
-def _detect_size(description: str) -> str:
-    """Extract size from the order description."""
+
+async def _resolve_size(session, description: str) -> str | None:
+    db_sizes = await get_sizes_list(session)
     desc_lower = description.lower()
-    sizes = [
-        "standard", "standart", "standart",
-        "premium", "премиум",
-        "vip",
-        "ultra",
-        "lite",
-        "base",
-        "pro",
-    ]
-    for s in sizes:
-        if s in desc_lower:
-            return s.capitalize()
-    return description.strip() or "Standard"
+
+    mapping = _parse_lot_mapping()
+    for keyword, size in mapping.items():
+        if keyword.lower() in desc_lower and size in db_sizes:
+            return size
+
+    words = desc_lower.split()
+    for w in words:
+        for s in db_sizes:
+            if w == s.lower():
+                return s
+
+    return None
+
+
+def _parse_lot_mapping() -> dict[str, str]:
+    raw = settings.funpay_lot_mapping
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("FunPay: invalid FUNPAY_LOT_MAPPING JSON: %s", raw)
+        return {}
+
+
+def _get_chat(acc, username: str):
+    try:
+        return acc.get_chat_by_name(username, make_request=True)
+    except Exception:
+        return None
 
 
 def _generate_code(length: int = 10) -> str:
