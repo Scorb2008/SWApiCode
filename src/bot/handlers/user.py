@@ -267,7 +267,8 @@ async def pay_with_balance(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         f"✅ <b>Покупка успешна!</b>\n\n"
         f"{creds}\n\n"
-        f"💵 Списано: {total:.2f} ₽",
+        f"💵 Списано: {total:.2f} ₽\n"
+        f"ℹ️ <b>Сайт для входа: https://codex.sale</b>",
         reply_markup=user_main_kb(),
     )
     await callback.answer()
@@ -518,7 +519,8 @@ async def promo_apply(message: types.Message, state: FSMContext):
                 await message.answer(
                     f"✅ <b>Аккаунт получен!</b>\n\n"
                     f"🔑 Логин: <code>{html.escape(acc.login)}</code>\n"
-                    f"🔐 Пароль: <code>{html.escape(acc.password)}</code>",
+                    f"🔐 Пароль: <code>{html.escape(acc.password)}</code>\n\n"
+                    f"ℹ️ <b>Сайт для входа: https://codex.sale</b>",
                     reply_markup=user_main_kb(),
                 )
         except ValueError as e:
