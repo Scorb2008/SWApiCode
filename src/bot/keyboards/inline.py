@@ -236,8 +236,18 @@ def promo_type_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💰 Баланс (пополнение)", callback_data="promo_type:balance")],
         [InlineKeyboardButton(text="🎟 Токен (выдача)", callback_data="promo_type:token")],
+        [InlineKeyboardButton(text="📦 Аккаунт (выдача тарифа)", callback_data="promo_type:account")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
     ])
+
+
+def promo_sizes_kb(sizes: list[str]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for s in sizes:
+        builder.button(text=s, callback_data=f"promo_size:{s}")
+    builder.adjust(2)
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
+    return builder.as_markup()
 
 
 def sizes_list_kb(sizes: list[str]) -> InlineKeyboardMarkup:

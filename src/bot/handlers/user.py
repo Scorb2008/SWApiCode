@@ -506,9 +506,22 @@ async def promo_apply(message: types.Message, state: FSMContext):
                     f"✅ <b>Получен токен:</b>\n<code>{token_text}</code>",
                     reply_markup=user_main_kb(),
                 )
-        except ValueError:
-            await message.answer(
-                "❌ Промокод уже использован или неактивен.",
-                reply_markup=user_main_kb(),
-            )
+            elif promo.promo_type == "account":
+                size = promo.token_value
+                if not size:
+                    await message.answer("❌ Размер не указан.", reply_markup=user_main_kb())
+                    return
+                accounts = await reserve_and_sell_accounts(session, size, 1, user.id, Decimal("0"))
+                await use_promo(session, promo)
+                await session.commit()
+                acc = accounts[0]
+                await message.answer(
+                    f"✅ <b>Аккаунт получен!</b>\n\n"
+                    f"🔑 Логин: <code>{html.escape(acc.login)}</code>\n"
+                    f"🔐 Пароль: <code>{html.escape(acc.password)}</code>",
+                    reply_markup=user_main_kb(),
+                )
+        except ValueError as e:
+            err = str(e) if str(e) else "Промокод уже использован или неактивен."
+            await message.answer(f"❌ {err}", reply_markup=user_main_kb())
     await state.clear()

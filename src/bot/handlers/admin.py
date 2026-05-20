@@ -17,6 +17,7 @@ from src.bot.keyboards.inline import (
     broadcast_confirm_kb,
     cancel_kb,
     clear_accounts_confirm_kb,
+    promo_sizes_kb,
     promo_type_kb,
     promos_pagination_kb,
     sizes_list_kb,
@@ -727,14 +728,34 @@ async def balance_amount_handler(message: types.Message, state: FSMContext):
 async def promo_type_chosen(callback: types.CallbackQuery, state: FSMContext):
     promo_type = callback.data.split(":", 1)[1]
     await state.update_data(promo_type=promo_type)
-    await state.set_state(AdminStates.creating_promo_value)
 
+    if promo_type == "account":
+        async with async_session() as session:
+            sizes = await get_sizes_list(session)
+        if not sizes:
+            await _safe_edit(callback, text="❌ Нет размеров в БД. Сначала импортируйте аккаунты.", reply_markup=admin_panel_kb())
+            await callback.answer()
+            return
+        await state.set_state(AdminStates.creating_promo_size)
+        await _safe_edit(callback, text="📦 <b>Создание промокода</b>\n\nВыберите размер:", reply_markup=promo_sizes_kb(sizes))
+        await callback.answer()
+        return
+
+    await state.set_state(AdminStates.creating_promo_value)
     hint = {
         "balance": "Введите сумму пополнения (например: 500)",
         "token": "Введите текст токена для выдачи",
     }.get(promo_type, "Введите значение:")
-
     await _safe_edit(callback, text=f"🏷 <b>Создание промокода</b>\n\n{hint}:", reply_markup=cancel_kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("promo_size:"), AdminStates.creating_promo_size)
+async def promo_size_chosen(callback: types.CallbackQuery, state: FSMContext):
+    size = callback.data.split(":", 1)[1]
+    await state.update_data(promo_value=size)
+    await state.set_state(AdminStates.creating_promo_uses)
+    await _safe_edit(callback, text=f"📦 <b>Создание промокода</b>\n\nРазмер: {size}\n\nВведите количество использований (по умолчанию 1):", reply_markup=cancel_kb)
     await callback.answer()
 
 
@@ -778,14 +799,14 @@ async def promo_uses_handler(message: types.Message, state: FSMContext):
     code = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
     async with async_session() as session:
-        token = promo_value if promo_type == "token" else None
+        token = promo_value if promo_type in ("token", "account") else None
         promo = await create_promo(
             session, code=code, promo_type=promo_type,
             value=Decimal(promo_value) if promo_type == "balance" else Decimal("0"),
             max_uses=max_uses, token_value=token,
         )
 
-    display_value = promo_value if promo_type == "token" else f"{promo_value} ₽"
+    display_value = promo_value if promo_type in ("token", "account") else f"{promo_value} ₽"
     await state.clear()
     await message.answer(
         f"✅ <b>Промокод создан!</b>\n\n🎟 Код: <code>{promo.code}</code>\n"

@@ -25,6 +25,7 @@ class AdminStates(StatesGroup):
     creating_promo_type = State()
     creating_promo_value = State()
     creating_promo_uses = State()
+    creating_promo_size = State()
     waiting_for_welcome_photo = State()
     waiting_for_new_price = State()
 
