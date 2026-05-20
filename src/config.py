@@ -20,9 +20,6 @@ class Settings(BaseSettings):
     channel_url: str = ""
     privacy_policy_url: str = "https://telegra.ph/Politika-konfidencialnosti-04-01-26"
     user_agreement_url: str = "https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19"
-    funpay_golden_key: str = ""
-    funpay_lot_mapping: str = ""
-    funpay_lot_id: int = 0
 
     @property
     def admin_ids_list(self) -> list[int]:

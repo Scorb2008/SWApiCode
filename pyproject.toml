@@ -12,7 +12,6 @@ dependencies = [
     "aiosqlite>=0.20",
     "openpyxl>=3.1",
     "pydantic-settings>=2.6",
-    "funpayapi>=1.1.0",
 ]
 
 [project.scripts]
