@@ -18,6 +18,7 @@ from src.db.repository import (
     get_user_by_telegram_id,
     reserve_and_sell_accounts,
 )
+from src.services.funpay import start_funpay_listener
 from src.services.yookassa import get_payment_status, register_webhook
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,7 @@ async def _reconcile_payments():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(_reconcile_payments())
+    await start_funpay_listener()
     await _register_webhook_on_start()
     yield
     task.cancel()
