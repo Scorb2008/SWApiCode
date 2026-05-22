@@ -146,13 +146,14 @@ def size_selection_kb(sizes: list[tuple[str, int]]) -> InlineKeyboardMarkup:
 
 
 def payment_method_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="💳 Баланс", callback_data="pay:balance"),
-            InlineKeyboardButton(text="💳 ЮKassa", callback_data="pay:yookassa"),
-        ],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
-    ])
+    from src.config import settings
+    buttons = [
+        [InlineKeyboardButton(text="💳 Баланс", callback_data="pay:balance")],
+    ]
+    if settings.yookassa_configured:
+        buttons[0].append(InlineKeyboardButton(text="💳 ЮKassa", callback_data="pay:yookassa"))
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def confirm_purchase_kb() -> InlineKeyboardMarkup:

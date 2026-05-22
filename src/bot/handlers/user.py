@@ -109,6 +109,10 @@ async def show_purchase_history(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "menu:topup")
 async def top_up_start(callback: types.CallbackQuery, state: FSMContext):
+    if not settings.yookassa_configured:
+        await callback.answer("❌ Пополнение баланса недоступно.", show_alert=True)
+        return
+
     await state.set_state(TopUpStates.entering_amount)
     await callback.message.answer(
         "💰 <b>Пополнение баланса</b>\n\n"
@@ -210,6 +214,11 @@ async def confirm_purchase(callback: types.CallbackQuery, state: FSMContext):
     quantity = data["quantity"]
     size = data["chosen_size"]
     total = Decimal(data["total"])
+
+    if not settings.yookassa_configured:
+        await state.update_data(total=str(total))
+        await pay_with_balance(callback, state)
+        return
 
     await state.set_state(BuyStates.choosing_payment)
     await state.update_data(pending_total=str(total))

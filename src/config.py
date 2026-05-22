@@ -25,5 +25,9 @@ class Settings(BaseSettings):
     def admin_ids_list(self) -> list[int]:
         return [int(x.strip()) for x in self.admin_ids.split(",") if x.strip()]
 
+    @property
+    def yookassa_configured(self) -> bool:
+        return bool(self.yookassa_shop_id and self.yookassa_secret_key)
+
 
 settings = Settings()
